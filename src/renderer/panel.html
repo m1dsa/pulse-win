@@ -1,0 +1,75 @@
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<style>
+  * { margin: 0; padding: 0; box-sizing: border-box; user-select: none; -webkit-user-select: none; }
+  html, body { width: 100%; height: 100%; overflow: hidden; background: transparent;
+    font-family: "Segoe UI", "Microsoft YaHei", system-ui, sans-serif; }
+
+  /* The rail: a black rounded pill, docked flush to the screen edge. */
+  #rail { position: absolute; display: flex; gap: 0; background: rgba(22,22,24,0.94);
+    box-shadow: 0 4px 18px rgba(0,0,0,0.45), inset 0 0 0 0.5px rgba(255,255,255,0.10);
+    overflow: hidden; }
+  body.vertical #rail { flex-direction: column; border-radius: 31px;
+    left: 0; top: 0; width: 62px; height: 100%; padding: 10px 0; }
+  body.horizontal #rail { flex-direction: row; border-radius: 31px;
+    left: 0; top: 0; height: 62px; width: 100%; padding: 0 10px; }
+  /* Docked edges: the pill's outside corner is square against the screen edge. */
+  body.dock-right #rail { border-radius: 31px 0 0 31px; }
+  body.dock-left  #rail { border-radius: 0 31px 31px 0; }
+  body.dock-top   #rail { border-radius: 0 0 31px 31px; }
+
+  .slot { position: relative; display: flex; flex-direction: column; align-items: center;
+    justify-content: center; width: 62px; height: 62px; cursor: pointer; flex: none; }
+  body.horizontal .slot { width: 62px; height: 62px; }
+  .slot:hover { background: rgba(255,255,255,0.06); }
+  body.dock-right .slot { border-radius: 0; }
+  .slot:hover .ring { filter: drop-shadow(0 0 5px rgba(255,255,255,0.25)); }
+
+  .ring { width: 40px; height: 40px; position: relative; }
+  .ring svg { position: absolute; inset: 0; }
+  .ring .icon { position: absolute; inset: 0; display: flex; align-items: center; justify-content: center; }
+  .ring .icon svg { position: static; width: 19px; height: 19px; color: rgba(255,255,255,0.88); }
+  .ring .icon svg * { fill: currentColor; }
+  .slot.stale .ring .icon, .slot.unavailable .ring .icon { color: rgba(255,255,255,0.38); }
+  .slot.unavailable .ring .arc { opacity: 0; }
+  .slot.unavailable .ring .track { stroke: #3a3a3c; }
+  .slot.stale .ring .arc { opacity: 0.55; }
+
+  .pct { font-size: 11px; font-weight: 700; color: #fff; line-height: 14px; margin-top: 1px;
+    font-variant-numeric: tabular-nums; letter-spacing: -0.2px; }
+  .slot.unavailable .pct { color: rgba(255,255,255,0.35); font-weight: 500; }
+  .pct.spent { color: #ff5147; }
+  .pct.red { color: #ff5147; }
+  .pct.amber { color: #ffd60a; }
+  .pct.green { color: #30d158; }
+  body.no-numbers .pct { display: none; }
+
+  /* Refresh sweep: a short bright arc chasing its tail while a fetch is out. */
+  .ring .sweep { animation: sweep 1s linear infinite; }
+  @keyframes sweep { to { transform: rotate(360deg); } }
+  .ring .sweep svg, .ring svg.sweep { transform-origin: 50% 50%; }
+
+  /* The collapsed sliver: a thin coloured line at the screen edge. */
+  #sliver { position: absolute; display: none; cursor: pointer; }
+  body.collapsed #sliver { display: block; }
+  body.collapsed #rail { display: none; }
+  body.vertical.collapsed #sliver { left: 0; top: 0; width: 6px; height: 100%; border-radius: 0; }
+  body.horizontal.collapsed #sliver { left: 0; top: 0; width: 100%; height: 6px; border-radius: 0; }
+  #sliver .fill { position: absolute; inset: 0; background: rgba(22,22,24,0.9); }
+  #sliver .alert { position: absolute; inset: 0; }
+
+  /* Drag affordance: the whole rail is a drag surface; slots handle their own clicks. */
+  #rail { cursor: default; }
+</style>
+</head>
+<body class="vertical dock-right">
+  <div id="rail"></div>
+  <div id="sliver"><div class="fill"></div><div class="alert"></div></div>
+  <script src="../shared/usage.js"></script>
+  <script src="../shared/i18n.js"></script>
+  <script src="panel.js"></script>
+</body>
+</html>

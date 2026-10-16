@@ -1,0 +1,8 @@
+[
+  "typeof window.pulse",
+  "document.querySelectorAll('.slot').length",
+  "document.body.className",
+  "document.getElementById('rail').childElementCount",
+  "document.querySelector('.slot .pct') ? document.querySelector('.slot .pct').textContent : 'no pct'",
+  "(async () => { const s = await window.pulse.invoke('snapshot'); return JSON.stringify({enabled: s.state.enabled, readings: Object.keys(s.state.readings||{}), providers: s.providers.length}); })()"
+]

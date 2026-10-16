@@ -1,0 +1,33 @@
+{
+  "name": "pulse-win",
+  "productName": "Pulse",
+  "version": "0.1.0",
+  "description": "Know how much your AI coding tools have left — a Windows port of Pulse (macOS), on the edge of your screen.",
+  "main": "src/main/main.js",
+  "license": "Apache-2.0",
+  "scripts": {
+    "start": "electron .",
+    "dist": "electron-builder --win portable",
+    "test-providers": "node scripts/test-providers.js"
+  },
+  "devDependencies": {
+    "electron": "^38.0.0",
+    "electron-builder": "^26.0.12"
+  },
+  "build": {
+    "appId": "dev.pulse.win",
+    "productName": "Pulse",
+    "files": [
+      "src/**/*",
+      "assets/**/*",
+      "package.json"
+    ],
+    "win": {
+      "target": "portable",
+      "icon": "assets/icon.ico"
+    },
+    "portable": {
+      "artifactName": "Pulse-${version}-win.exe"
+    }
+  }
+}

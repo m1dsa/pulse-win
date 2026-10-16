@@ -1,0 +1,123 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<title>Pulse 设置</title>
+<style>
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  html, body { height: 100%; background: #161617; color: #ececf1;
+    font-family: "Segoe UI", "Microsoft YaHei", system-ui, sans-serif; font-size: 13px; }
+  body { display: flex; flex-direction: column; }
+
+  header { padding: 16px 20px 12px; border-bottom: 0.5px solid rgba(255,255,255,0.10);
+    display: flex; align-items: baseline; gap: 10px; }
+  header h1 { font-size: 17px; font-weight: 650; }
+  header .ver { color: rgba(255,255,255,0.38); font-size: 12px; }
+  header .first-run { color: #ffd60a; font-size: 12px; margin-left: auto; }
+
+  main { flex: 1; overflow-y: auto; padding: 14px 20px 30px; }
+  section { margin-bottom: 26px; }
+  section > h2 { font-size: 13px; font-weight: 650; color: rgba(255,255,255,0.55);
+    margin-bottom: 8px; letter-spacing: 0.2px; }
+
+  .card { background: #1e1e20; border-radius: 10px; overflow: hidden;
+    box-shadow: inset 0 0 0 0.5px rgba(255,255,255,0.08); }
+  .row { display: flex; align-items: center; gap: 10px; padding: 10px 14px;
+    border-bottom: 0.5px solid rgba(255,255,255,0.06); }
+  .row:last-child { border-bottom: none; }
+  .row .grow { flex: 1; min-width: 0; }
+  .row label { flex: 1; cursor: pointer; }
+  .sub { font-size: 11.5px; color: rgba(255,255,255,0.40); margin-top: 2px; }
+
+  .provider { display: flex; flex-direction: column; }
+  .provider .line { display: flex; align-items: center; gap: 10px; }
+  .provider .picon { width: 20px; height: 20px; color: rgba(255,255,255,0.85); flex: none; }
+  .provider .picon svg { width: 20px; height: 20px; }
+  .provider .picon svg * { fill: currentColor; }
+  .provider .name { font-weight: 600; }
+  .badge { font-size: 10.5px; padding: 1px 7px; border-radius: 8px; background: rgba(48,209,88,0.15);
+    color: #30d158; flex: none; }
+  .badge.dim { background: rgba(255,255,255,0.08); color: rgba(255,255,255,0.45); }
+  .kept { font-size: 10.5px; color: rgba(255,255,255,0.38); flex: none; }
+  .keyrow { display: flex; gap: 8px; margin: 6px 0 4px 30px; }
+  .keyrow input { flex: 1; }
+
+  input[type="text"], input[type="password"], select {
+    background: #2a2a2d; color: #ececf1; border: 0.5px solid rgba(255,255,255,0.14);
+    border-radius: 6px; padding: 5px 9px; font-size: 12.5px; outline: none; }
+  input[type="text"]:focus, input[type="password"]:focus, select:focus {
+    border-color: #0a84ff; }
+  input[type="checkbox"] { width: 15px; height: 15px; accent-color: #0a84ff; }
+  input[type="range"] { width: 140px; accent-color: #0a84ff; }
+  select { padding: 4px 8px; }
+  button { background: #2a2a2d; color: #ececf1; border: 0.5px solid rgba(255,255,255,0.14);
+    border-radius: 6px; padding: 5px 12px; font-size: 12.5px; cursor: pointer; }
+  button:hover { background: #353538; }
+  button.primary { background: #0a84ff; border-color: #0a84ff; color: #fff; }
+  button.primary:hover { background: #1f8fff; }
+  .hint { font-size: 11.5px; color: rgba(255,255,255,0.38); padding: 6px 14px 10px; }
+  .about { color: rgba(255,255,255,0.5); font-size: 12px; line-height: 1.7; }
+  .about b { color: #ececf1; }
+  a { color: #0a84ff; text-decoration: none; }
+</style>
+</head>
+<body>
+<header>
+  <h1>Pulse</h1><span class="ver" id="ver"></span>
+  <span class="first-run" id="firstRun" style="display:none"></span>
+</header>
+<main>
+  <section id="sec-providers">
+    <h2 id="t-services">服务商</h2>
+    <div class="card" id="providerList"></div>
+    <div class="hint" id="providerHint"></div>
+  </section>
+
+  <section>
+    <h2 id="t-panel">悬浮条</h2>
+    <div class="card">
+      <div class="row"><label id="t-dock">停靠位置</label>
+        <select id="opt-dock">
+          <option value="right" id="d-right"></option>
+          <option value="left" id="d-left"></option>
+          <option value="top" id="d-top"></option>
+          <option value="free" id="d-free"></option>
+        </select></div>
+      <div class="row"><label id="t-collapse">闲置时收成细线</label>
+        <input type="checkbox" id="opt-collapse"></div>
+      <div class="row"><label id="t-numbers">在圆环下显示百分比</label>
+        <input type="checkbox" id="opt-numbers"></div>
+      <div class="row"><label id="t-nocap">截图时隐藏</label>
+        <input type="checkbox" id="opt-nocap"></div>
+    </div>
+  </section>
+
+  <section>
+    <h2 id="t-general">通用</h2>
+    <div class="card">
+      <div class="row"><label id="t-login">开机自动启动</label>
+        <input type="checkbox" id="opt-login"></div>
+      <div class="row"><label id="t-interval">刷新间隔</label>
+        <select id="opt-interval">
+          <option value="2">2</option><option value="5">5</option>
+          <option value="10">10</option><option value="15">15</option><option value="30">30</option>
+        </select><span id="t-minutes" class="sub"></span></div>
+      <div class="row"><label id="t-warn">警告阈值</label>
+        <input type="range" id="opt-warn" min="60" max="90" step="5">
+        <span id="warn-val" class="sub" style="min-width:36px;text-align:right"></span></div>
+      <div class="row"><label id="t-statusline">Claude Code 状态栏</label>
+        <button id="btn-statusline"></button></div>
+      <div class="hint" id="t-statusline-hint" style="padding-top:0"></div>
+    </div>
+  </section>
+
+  <section>
+    <h2 id="t-about">关于</h2>
+    <div class="card"><div class="row"><div class="about" id="aboutText"></div></div></div>
+  </section>
+</main>
+<script src="../shared/usage.js"></script>
+<script src="../shared/i18n.js"></script>
+<script src="settings.js"></script>
+</body>
+</html>
