@@ -59,7 +59,9 @@
   body.vertical.collapsed #sliver { left: 0; top: 0; width: 6px; height: 100%; border-radius: 0; }
   body.horizontal.collapsed #sliver { left: 0; top: 0; width: 100%; height: 6px; border-radius: 0; }
   #sliver .fill { position: absolute; inset: 0; background: rgba(22,22,24,0.9); }
-  #sliver .alert { position: absolute; inset: 0; }
+  /* The alert tint is a slim, dimmed accent inside the dark sliver — a full-
+     strength 6px bar reads as an error banner on light wallpaper. */
+  #sliver .alert { position: absolute; inset: 0 1px; opacity: 0.55; }
 
   /* Drag affordance: the whole rail is a drag surface; slots handle their own clicks. */
   #rail { cursor: default; }

@@ -154,7 +154,19 @@ function disarmIdle() {
   if (idleTimer) { clearTimeout(idleTimer); idleTimer = null; }
 }
 
-sliver.addEventListener('mouseenter', () => window.pulse.send('rail:collapse', false));
+// Expand only after a short dwell on the sliver. Brushes along the screen
+// edge (a maximized app's scrollbar, the corner, a fast pass) enter it too,
+// and Windows synthesizes a mouseenter when the window shrinks under a
+// parked cursor — none of those are the user asking for the rail.
+const EXPAND_DWELL_MS = 250;
+let expandTimer = null;
+sliver.addEventListener('mouseenter', () => {
+  if (expandTimer) clearTimeout(expandTimer);
+  expandTimer = setTimeout(() => window.pulse.send('rail:collapse', false), EXPAND_DWELL_MS);
+});
+sliver.addEventListener('mouseleave', () => {
+  if (expandTimer) { clearTimeout(expandTimer); expandTimer = null; }
+});
 rail.addEventListener('mouseenter', disarmIdle);
 rail.addEventListener('mouseleave', () => {
   window.pulse.send('card:hideSoon');

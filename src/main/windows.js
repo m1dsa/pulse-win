@@ -91,7 +91,17 @@ class PanelController {
     ipcMain.on('rail:contextmenu', (_e, sx, sy) => {
       if (this.contextMenuAt) this.contextMenuAt(sx, sy);
     });
-    ipcMain.on('rail:collapse', (_e, on) => this.setCollapsed(on));
+    ipcMain.on('rail:collapse', (_e, on) => {
+      // Expanding needs a real cursor move since the collapse: when the window
+      // shrinks under a parked cursor Windows re-fires mouseenter without any
+      // movement, and that must not pop the rail back open.
+      if (!on && this.collapseCursor) {
+        const p = screen.getCursorScreenPoint();
+        if (p.x === this.collapseCursor.x && p.y === this.collapseCursor.y) return;
+      }
+      this.collapseCursor = null;
+      this.setCollapsed(on);
+    });
     ipcMain.on('sliver:alertTint', (_e, color) => { this.sliverAlert = color; });
     ipcMain.on('provider:refresh', (_e, id) => { if (this.refreshProvider) this.refreshProvider(id); });
   }
@@ -248,7 +258,7 @@ class PanelController {
     on = !!on;
     if (this.collapsed === on) return;
     this.collapsed = on;
-    if (on) this.hideCard(true);
+    if (on) { this.collapseCursor = screen.getCursorScreenPoint(); this.hideCard(true); }
     this.place();
   }
 
