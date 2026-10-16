@@ -76,7 +76,7 @@ class PanelController {
   wire() {
     ipcMain.on('panel:ready', () => {
       this.sendLayout();
-      if (this.lastSnapshot) this.win.webContents.send('state', this.lastSnapshot);
+      if (this.lastSnapshot && !this.panelGone()) this.win.webContents.send('state', this.lastSnapshot);
     });
     ipcMain.on('card:ready', () => { /* card waits for show() */ });
 
@@ -108,6 +108,11 @@ class PanelController {
 
   // ---------- geometry ----------
 
+  // The rail window can die while the card/renderer still have IPC in flight
+  // (quit races, renderer teardown). Everything touching this.win goes
+  // through this guard instead of crashing on getBounds().
+  panelGone() { return !this.win || this.win.isDestroyed(); }
+
   slots() { return Math.max(this.slotCount, 1); }
   railLength() { return PAD * 2 + this.slots() * SLOT; }
   axis() { return this.dock === 'top' ? 'horizontal' : (this.dock === 'free' ? this.freeAxis : 'vertical'); }
@@ -116,6 +121,7 @@ class PanelController {
   display() {
     // The display the rail lives on: the one containing the rail's center if
     // placed, else nearest the saved anchor, else primary.
+    if (this.panelGone()) return screen.getPrimaryDisplay();
     const b = this.win.getBounds();
     if (b.width > SLIVER + 4 || this.placed) {
       return screen.getDisplayNearestPoint({ x: b.x + b.width / 2, y: b.y + b.height / 2 });
@@ -151,6 +157,7 @@ class PanelController {
   }
 
   place() {
+    if (this.panelGone()) return;
     const b = this.computeBounds();
     this.win.setBounds(b);
     this.placed = true;
@@ -178,12 +185,13 @@ class PanelController {
   // ---------- visibility ----------
 
   show() {
+    if (this.panelGone()) return;
     this.rebuild();
     this.place();
     this.win.showInactive();
   }
-  hide() { this.hideCard(true); this.win.hide(); }
-  isVisible() { return this.win.isVisible(); }
+  hide() { this.hideCard(true); if (!this.panelGone()) this.win.hide(); }
+  isVisible() { return !this.panelGone() && this.win.isVisible(); }
 
   updateState(snap) { this.lastSnapshot = snap; }
 
@@ -192,6 +200,7 @@ class PanelController {
   // The pointer's screen position each frame; the window follows, and fuses
   // to an edge when it gets close — during the drag, not on mouse-up.
   dragMove(sx, sy, grabDX, grabDY) {
+    if (this.panelGone()) return;
     this.hideCard(true);
     const wa = this.workArea();
     const axisBefore = this.axis();
@@ -270,7 +279,7 @@ class PanelController {
   // ringPos is the ring's screen-center along the cross axis: Y for a
   // vertical rail, X for a horizontal one — the renderer knows which.
   showCard(accountId, ringPos) {
-    if (this.collapsed) return;
+    if (this.collapsed || this.panelGone()) return;
     this.cardAccount = accountId;
     this.cardRingPos = ringPos;
     this.hoverMisses = 0;
@@ -287,13 +296,14 @@ class PanelController {
 
   sizeCard(h) {
     const cw = this.cardWin;
-    if (!cw || cw.isDestroyed()) return;
+    if (!cw || cw.isDestroyed() || this.panelGone()) return;
     this.cardH = Math.max(80, Math.min(Math.ceil(h), 560));
     this.positionCard();
     if (!cw.isVisible()) cw.showInactive();
   }
 
   positionCard() {
+    if (this.panelGone() || !this.cardWin || this.cardWin.isDestroyed()) return;
     // computeBounds, not getBounds: during a collapse/expand transition the OS
     // window rect lags the intent, and the card must aim at where the rail IS.
     const rb = this.computeBounds();
@@ -329,7 +339,7 @@ class PanelController {
   startHoverWatch() {
     if (this.hoverTimer) return;
     this.hoverTimer = setInterval(() => {
-      if (!this.cardWin || this.cardWin.isDestroyed() || !this.cardWin.isVisible()) {
+      if (this.panelGone() || !this.cardWin || this.cardWin.isDestroyed() || !this.cardWin.isVisible()) {
         this.stopHoverWatch();
         return;
       }

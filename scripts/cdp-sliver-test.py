@@ -23,6 +23,9 @@ if cmd == 'expand':
 if cmd == 'collapse':
     ev(0, "window.pulse.send('rail:collapse', true)")
     time.sleep(0.3)
+if cmd == 'quit':
+    ev(0, "window.pulse.send('quit')")
+    time.sleep(0.3)
 print('class:', ev(1, "document.body.className"), '| collapsed:',
       ev(2, "document.body.classList.contains('collapsed')"))
 ws.close()
