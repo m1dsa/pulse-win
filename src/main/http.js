@@ -16,13 +16,26 @@ const RETRYABLE = new Set(['ECONNRESET', 'ECONNREFUSED', 'ETIMEDOUT', 'ENOTFOUND
 async function request(url, opts = {}) {
   const timeoutMs = opts.timeoutMs || 20000;
   const retries = opts.retries == null ? 2 : opts.retries;
+
+  const res = await attemptAll(url, opts, timeoutMs, retries, doFetch);
+  // Electron's network stack honors the system proxy, which makes it the
+  // flaky one — a proxy client mid-switch, a dead PAC rule, an IPv6 route
+  // nothing else uses. One Node-direct attempt stands in for the user
+  // switching proxy off and on again.
+  if (res.status === 0 && doFetch === netFetch && globalThis.fetch && !opts.noDirectFallback) {
+    return attemptAll(url, opts, timeoutMs, 0, globalThis.fetch);
+  }
+  return res;
+}
+
+async function attemptAll(url, opts, timeoutMs, retries, fetchImpl) {
   let lastErr = null;
 
   for (let attempt = 0; attempt <= retries; attempt++) {
     const controller = new AbortController();
     const timer = setTimeout(() => controller.abort(), timeoutMs);
     try {
-      const res = await doFetch(url, {
+      const res = await fetchImpl(url, {
         method: opts.method || 'GET',
         headers: opts.headers || {},
         body: opts.body,
