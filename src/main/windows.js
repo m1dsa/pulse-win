@@ -20,6 +20,7 @@ const CARD_W = 322;
 const CARD_GAP = 10;
 const HOVER_POLL_MS = 100;
 const HOVER_MISS_MAX = 4;
+const CARD_TTL_MS = 3000; // card folds away unless the pointer is on the card
 
 const PRELOAD = path.join(__dirname, '..', 'preload', 'api.js');
 
@@ -280,9 +281,11 @@ class PanelController {
   // vertical rail, X for a horizontal one — the renderer knows which.
   showCard(accountId, ringPos) {
     if (this.collapsed || this.panelGone()) return;
+    this.cardAlive = true;
     this.cardAccount = accountId;
     this.cardRingPos = ringPos;
     this.hoverMisses = 0;
+    this.cardShownAt = Date.now();
 
     const cw = this.cardWin;
     const content = { accountId, ringScreenY: ringPos, dock: this.dock, axis: this.axis() };
@@ -295,8 +298,11 @@ class PanelController {
   }
 
   sizeCard(h) {
+    // The card renderer re-reports its height on every 'state' broadcast; only
+    // an open card may act on that. Without the gate every refresh resurrects
+    // a card the user already dismissed.
     const cw = this.cardWin;
-    if (!cw || cw.isDestroyed() || this.panelGone()) return;
+    if (!this.cardAlive || !cw || cw.isDestroyed() || this.panelGone()) return;
     this.cardH = Math.max(80, Math.min(Math.ceil(h), 560));
     this.positionCard();
     if (!cw.isVisible()) cw.showInactive();
@@ -344,9 +350,16 @@ class PanelController {
         return;
       }
       const pt = screen.getCursorScreenPoint();
-      const inRail = pointIn(pt, this.win.getBounds());
+      // Cursor over the collapsed 6px sliver is not "hovering the rail".
+      const inRail = !this.collapsed && pointIn(pt, this.win.getBounds());
       const inCard = pointIn(pt, this.cardWin.getBounds());
-      if (inRail || inCard) { this.hoverMisses = 0; return; }
+      if (inRail || inCard) {
+        this.hoverMisses = 0;
+        // Parked-on-rail is not engagement: the card ages out on its own.
+        // Only a cursor actually over the card keeps it alive.
+        if (!inCard && Date.now() - (this.cardShownAt || 0) > CARD_TTL_MS) this.hideCard();
+        return;
+      }
       if (++this.hoverMisses >= HOVER_MISS_MAX) this.hideCard();
     }, HOVER_POLL_MS);
   }
@@ -358,6 +371,7 @@ class PanelController {
   hideCardSoon() { this.hoverMisses = Math.max(this.hoverMisses, HOVER_MISS_MAX - 1); }
 
   hideCard(now) {
+    this.cardAlive = false;
     const was = this.cardWin && !this.cardWin.isDestroyed() && this.cardWin.isVisible();
     if (this.cardWin && !this.cardWin.isDestroyed()) this.cardWin.hide();
     this.stopHoverWatch();

@@ -23,9 +23,24 @@ if cmd == 'expand':
 if cmd == 'collapse':
     ev(0, "window.pulse.send('rail:collapse', true)")
     time.sleep(0.3)
+if cmd == 'refresh':
+    ev(0, "window.pulse.send('refresh')")
+    time.sleep(0.3)
 if cmd == 'quit':
     ev(0, "window.pulse.send('quit')")
     time.sleep(0.3)
 print('class:', ev(1, "document.body.className"), '| collapsed:',
       ev(2, "document.body.classList.contains('collapsed')"))
 ws.close()
+
+card = next((t for t in targets() if 'card.html' in t['url']), None)
+if card:
+    ws2 = websocket.create_connection(card['webSocketDebuggerUrl'], timeout=8, suppress_origin=True)
+    ws2.send(json.dumps({'id': 9, 'method': 'Runtime.evaluate',
+                         'params': {'expression': 'document.visibilityState', 'returnByValue': True}}))
+    while True:
+        m = json.loads(ws2.recv())
+        if m.get('id') == 9:
+            print('card visibility:', m.get('result', {}).get('result', {}).get('value'))
+            break
+    ws2.close()

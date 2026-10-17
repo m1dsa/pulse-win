@@ -1,8 +1,8 @@
 {
   "name": "pulse-win",
   "productName": "Pulse",
-  "version": "0.1.0",
-  "description": "Know how much your AI coding tools have left — a Windows port of Pulse (macOS), on the edge of your screen.",
+  "version": "0.1.1",
+  "description": "Know how much your AI coding tools have left 鈥?a Windows port of Pulse (macOS), on the edge of your screen.",
   "main": "src/main/main.js",
   "license": "Apache-2.0",
   "scripts": {

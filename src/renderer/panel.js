@@ -16,6 +16,17 @@ let idleTimer = null;
 let armedOnce = false;
 let drag = null;
 let suppressClick = false;
+// Renders rebuild the slot DOM, and a cursor parked on a slot then receives
+// *synthesized* pointermove+mouseenter events as if it had just arrived —
+// refreshes were opening cards on their own. The synthesized move carries
+// the cursor's unchanged coordinates; a real move always changes them.
+// lastRealMove only follows events that actually went somewhere.
+const lastMove = { x: null, y: null, t: 0 };
+document.addEventListener('pointermove', (e) => {
+  if (e.screenX === lastMove.x && e.screenY === lastMove.y) return;
+  lastMove.x = e.screenX; lastMove.y = e.screenY; lastMove.t = Date.now();
+  if (!collapsed && !cardOpen) resetIdle();
+});
 
 // ---------- render ----------
 
@@ -73,6 +84,7 @@ function render() {
         balanceOnly ? shortMoney(usage.creditBalance) : '—'}</div>`;
 
     slot.addEventListener('mouseenter', (e) => {
+      if (Date.now() - lastMove.t > 800) return; // synthesized, not a hover
       cardOpen = true;
       disarmIdle();
       const r = slot.querySelector('.ring').getBoundingClientRect();
@@ -134,9 +146,11 @@ function onDragEnd() {
 }
 
 // ---------- collapse ----------
-// Idle means the pointer is gone, not that data is old. The timer arms when
-// the pointer leaves the rail (and no card is open) and on first layout —
-// the rail announces itself at launch, then steps back to the edge.
+// Idle means no pointer movement for a while — a cursor parked on the rail
+// is still "hovering" to the DOM, so leave/enter events alone can keep the
+// rail open forever. Arm on every move; six quiet seconds folds it away.
+// (If the window shrinks onto that parked cursor, the sliver's own dwell +
+// the main-process cursor-moved guard stop it from waking again.)
 
 let cardOpen = false;
 
@@ -149,6 +163,7 @@ function armIdle() {
     }
   }, 6000);
 }
+function resetIdle() { disarmIdle(); armIdle(); }
 
 function disarmIdle() {
   if (idleTimer) { clearTimeout(idleTimer); idleTimer = null; }
