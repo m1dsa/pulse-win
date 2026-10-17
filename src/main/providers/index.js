@@ -17,6 +17,7 @@ const minimax = require('./minimax.js');
 const v2ex = require('./v2ex.js');
 const devin = require('./devin.js');
 const qwenCloud = require('./qwenCloud.js');
+const openCodeGo = require('./openCodeGo.js');
 
 const HOME = os.homedir();
 function exists(p) { try { fs.accessSync(p); return true; } catch { return false; } }
@@ -124,6 +125,19 @@ const PROVIDERS = [
     keyHint: 'apiKeyCookiePlaceholder',
     discovered: () => false,
     fetch: (ctx) => qwenCloud.fetchUsage(ctx),
+  },
+  {
+    id: 'openCodeGo',
+    name: 'OpenCode',
+    icon: 'opencode.svg',
+    // Quota comes from a Go subscription key (pasted, or the one OpenCode
+    // saved in auth.json); the local database gives the card a usage ledger
+    // either way, so a missing key is not a missing card.
+    usesAPIKey: true,
+    apiKeyOptional: true,
+    keyHint: 'apiKeyOpenCodePlaceholder',
+    discovered: () => exists(path.join(HOME, '.local', 'share', 'opencode')),
+    fetch: (ctx) => openCodeGo.fetchUsage(ctx),
   },
 ];
 

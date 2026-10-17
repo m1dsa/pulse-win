@@ -39,6 +39,7 @@
     apiKeyOptionalPlaceholder: '可选：token 组织名（不填则读本机缓存）',
     apiKeyCookiePlaceholder: '粘贴 Cookie 整串（F12 → 网络 → 复制请求头）',
     apiKeyDeepSeekPlaceholder: '粘贴 API key，或控制台 userToken（platform.deepseek.com → F12 → 本地存储）',
+    apiKeyOpenCodePlaceholder: '可选：OpenCode Go 订阅 key（不填只显示本机用量）',
     site: '站点',
     save: '保存',
     saved: '已保存',

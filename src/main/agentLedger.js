@@ -391,6 +391,59 @@ function zcodeDays(table) {
   return days;
 }
 
+// ---------------------------------------------------------------- opencode
+
+// OpenCode's store: ~/.local/share/opencode/opencode.db, `message`. Each
+// assistant row's data JSON carries its own `tokens` — input/output/
+// reasoning/cache.{read,write}, which sum to `total` (reasoning is a
+// separate column there, not inside output). Rows without a tokens object,
+// and user rows, count nothing.
+function opencodeDays(table) {
+  if (!DatabaseSync) return null;
+  const file = path.join(os.homedir(), '.local', 'share', 'opencode', 'opencode.db');
+  if (!fs.existsSync(file)) return null;
+  const days = new Map();
+  const seen = new Set();
+  const db = new DatabaseSync(file, { readOnly: true });
+  try {
+    const rows = db.prepare('SELECT id, time_created, data FROM message').all();
+    for (const row of rows) {
+      if (row.id != null && !seen.add(String(row.id))) continue;
+      let data;
+      try { data = JSON.parse(row.data); } catch { continue; }
+      const tokens = data && data.tokens;
+      if (!tokens || typeof tokens !== 'object') continue;
+      const at = Number(row.time_created);
+      if (!Number.isFinite(at) || at <= 0) continue;
+
+      const cache = tokens.cache && typeof tokens.cache === 'object' ? tokens.cache : {};
+      const input = int(tokens.input);
+      const output = int(tokens.output);
+      const read = int(cache.read);
+      const write = int(cache.write);
+      const total = int(tokens.total);
+      // Reasoning bills as output; where a total is reported, never let the
+      // parts overrun it (a provider may already fold reasoning into output).
+      let reasoning = int(tokens.reasoning);
+      if (total > 0) reasoning = Math.min(reasoning, Math.max(total - (input + output + read + write), 0));
+      const tally = {
+        input,
+        cacheWrite: write,
+        cacheRead: read,
+        output: output + reasoning,
+        unclassified: total > 0 ? Math.max(total - (input + output + reasoning + read + write), 0) : 0,
+        recordedCache: true,
+      };
+      const key = agg.startOfLocalDay(at);
+      const day = days.get(key) || agg.emptyDay();
+      const model = (typeof data.modelID === 'string' && data.modelID) || 'unknown';
+      agg.addTally(day, model, tally, table);
+      days.set(key, day);
+    }
+  } finally { db.close(); }
+  return days;
+}
+
 // ------------------------------------------------------------------- cache
 
 // A log file only ever grows by appending; size + mtime say it is unchanged.
@@ -475,6 +528,12 @@ async function readLedger(source, dataDir) {
   if (source === 'zcode') {
     const table = await prices.table(dataDir);
     const days = zcodeDays(table);
+    return days ? agg.build(days, Date.now(), table) : null;
+  }
+  // OpenCode's is the same shape: one table, every message row self-contained.
+  if (source === 'opencode') {
+    const table = await prices.table(dataDir);
+    const days = opencodeDays(table);
     return days ? agg.build(days, Date.now(), table) : null;
   }
 

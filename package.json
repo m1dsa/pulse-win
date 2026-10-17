@@ -17,6 +17,7 @@
   "build": {
     "appId": "dev.pulse.win",
     "productName": "Pulse",
+    "compression": "normal",
     "files": [
       "src/**/*",
       "assets/**/*",

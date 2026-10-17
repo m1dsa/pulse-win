@@ -37,10 +37,12 @@ class Settings {
 
   load() {
     try {
-      const raw = JSON.parse(fs.readFileSync(this.file, 'utf8'));
+      // A BOM (hand-edited with PowerShell/Notepad) breaks JSON.parse and
+      // silently resets every preference — strip it before parsing.
+      const raw = JSON.parse(fs.readFileSync(this.file, 'utf8').replace(/^﻿/, ''));
       this.data = { ...DEFAULTS, ...raw, panel: { ...DEFAULTS.panel, ...(raw.panel || {}) } };
     } catch { /* absent or unreadable: defaults */ }
-    try { this.keys = JSON.parse(fs.readFileSync(this.keyFile, 'utf8')) || {}; } catch { this.keys = {}; }
+    try { this.keys = JSON.parse(fs.readFileSync(this.keyFile, 'utf8').replace(/^﻿/, '')) || {}; } catch { this.keys = {}; }
   }
 
   save() {
