@@ -1,11 +1,17 @@
 #!/bin/sh
-# Last gate before a push leaves this machine.
-if git grep -n -E 'QUOTA_INTERVAL_MS|claude-quota\.json' HEAD -- src >/dev/null 2>&1; then
-  echo "pulse-win: push blocked. Claude once-a-day quota is in src and must stay local."
-  exit 1
-fi
-if git cat-file -e "HEAD:src/main/providers/claudeQuota.local.js" 2>/dev/null; then
-  echo "pulse-win: push blocked. claudeQuota.local.js must not be committed."
-  exit 1
-fi
+# Last gate before a push leaves this machine. Checks every ref being pushed,
+# not only the branch that is currently checked out.
+while read -r local_ref local_sha remote_ref remote_sha; do
+  if [ "$local_sha" = "0000000000000000000000000000000000000000" ]; then
+    continue
+  fi
+  if git grep -n -E 'QUOTA_INTERVAL_MS|claude-quota\.json' "$local_sha" -- src >/dev/null 2>&1; then
+    echo "pulse-win: push blocked. Claude once-a-day quota is in $local_ref and must stay local."
+    exit 1
+  fi
+  if git cat-file -e "$local_sha:src/main/providers/claudeQuota.local.js" 2>/dev/null; then
+    echo "pulse-win: push blocked. claudeQuota.local.js must not be committed."
+    exit 1
+  fi
+done
 exit 0
