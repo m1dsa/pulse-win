@@ -47,6 +47,14 @@ const SOURCES = {
     parse: parseDshFile,
     match: (name) => name.endsWith('.jsonl') || name.endsWith('.jsonl.zstd'),
   },
+  // Qoder: ~/.qoder-cn/projects/<workspace>/<session>.jsonl — Claude-format
+  // transcripts except the token fields are all zero and `usage.credits` is
+  // the only real figure. `~/.qoder` is the international build's home.
+  qoder: {
+    roots: (home) => [path.join(home, '.qoder-cn', 'projects'), path.join(home, '.qoder', 'projects')],
+    archivedRoots: () => [],
+    parse: parseQoderFile,
+  },
 };
 
 function int(v) {
@@ -84,9 +92,10 @@ function tallyTotal(t) { return t.input + t.cacheWrite + t.cacheRead + t.output;
 
 function addRaw(day, model, tally) {
   // The file-level bucket of the scanned entry — priced later, at merge time.
-  const m = day[model] || { input: 0, cacheWrite: 0, cacheRead: 0, output: 0, recordedCache: false };
+  const m = day[model] || { input: 0, cacheWrite: 0, cacheRead: 0, output: 0, unclassified: 0, recordedCache: false };
   m.input += tally.input; m.cacheWrite += tally.cacheWrite;
   m.cacheRead += tally.cacheRead; m.output += tally.output;
+  m.unclassified += tally.unclassified || 0;
   m.recordedCache = m.recordedCache || tally.recordedCache;
   day[model] = m;
 }
@@ -348,6 +357,41 @@ async function parseDshFile(file) {
   return { firstMs: firstMs === Infinity ? null : firstMs, days: new Map(), replies, forked: false, runningTotals: [] };
 }
 
+// ------------------------------------------------------------------- qoder
+
+// Claude-format lines, but the token fields are all zero and `usage.credits`
+// is the only real figure — the charge that reply drew down. `billable:false`
+// marks calls the quota never felt, so they count nothing. A credit rides the
+// unclassified lane: counted, never priced, never sorted into a token bucket.
+async function parseQoderFile(file) {
+  const replies = new Map();    // qoder:message.id -> { slot, model, tally }
+  let firstMs = Infinity;
+
+  for await (const line of linesOf(file)) {
+    if (!line.includes('"credits"') || !line.includes('"assistant"')) continue;
+    let root;
+    try { root = JSON.parse(line); } catch { continue; }
+    if (!root || root.type !== 'assistant') continue;
+    const message = root.message;
+    const usage = message && message.usage;
+    if (!usage || typeof usage !== 'object' || usage.billable === false) continue;
+    const credits = Number(usage.credits);
+    if (!Number.isFinite(credits) || credits <= 0) continue;
+    const at = typeof root.timestamp === 'string' ? toDateMs(root.timestamp) : null;
+    if (!at) continue;
+    firstMs = Math.min(firstMs, at);
+    const slot = agg.startOfLocalDay(at);
+    const model = (typeof message.model === 'string' && message.model) || 'qoder';
+    const id = (typeof message.id === 'string' && message.id) || root.uuid;
+    if (typeof id !== 'string' || !id) continue;
+    replies.set(`qoder:${id}`, {
+      slot, model,
+      tally: { input: 0, cacheWrite: 0, cacheRead: 0, output: 0, unclassified: credits, recordedCache: false },
+    });
+  }
+  return { firstMs: firstMs === Infinity ? null : firstMs, days: new Map(), replies, forked: false, runningTotals: [] };
+}
+
 // ------------------------------------------------------------------- zcode
 
 // ZCode's v2 store: ~/.zcode/cli/db/db.sqlite, `model_usage`. The schema
@@ -398,9 +442,10 @@ function zcodeDays(table) {
 // reasoning/cache.{read,write}, which sum to `total` (reasoning is a
 // separate column there, not inside output). Rows without a tokens object,
 // and user rows, count nothing.
-function opencodeDays(table) {
+function opencodeDays(table, source = 'opencode') {
   if (!DatabaseSync) return null;
-  const file = path.join(os.homedir(), '.local', 'share', 'opencode', 'opencode.db');
+  const dir = source === 'mimo' ? 'mimocode' : 'opencode';
+  const file = path.join(os.homedir(), '.local', 'share', dir, `${dir}.db`);
   if (!fs.existsSync(file)) return null;
   const days = new Map();
   const seen = new Set();
@@ -444,12 +489,53 @@ function opencodeDays(table) {
   return days;
 }
 
+// CodeBuddy writes one usage-bearing event per model response or tool call.
+// Its input_tokens includes cache reads; keep them inside the reported total.
+async function codebuddyDays() {
+  const root = path.join(os.homedir(), '.codebuddy', 'projects');
+  const files = listJsonl(root);
+  if (!files.length) return null;
+  const days = new Map(), seen = new Set();
+  for (const file of files) {
+    try {
+      for await (const line of linesOf(file)) {
+        let entry;
+        try { entry = JSON.parse(line); } catch { continue; }
+        const u = entry.message && entry.message.usage;
+        if (!u || !['message', 'function_call'].includes(entry.type)) continue;
+        if (entry.type === 'message' && entry.role !== 'assistant') continue;
+        if (entry.id && seen.has(entry.id)) continue;
+        if (entry.id) seen.add(entry.id);
+        const at = typeof entry.timestamp === 'number' ? entry.timestamp : Date.parse(entry.timestamp);
+        if (!Number.isFinite(at) || at <= 0) continue;
+        const input = Math.max(0, int(u.input_tokens));
+        const cached = Math.min(input, Math.max(0, int(u.cache_read_input_tokens)));
+        const tally = { input: input - cached, cacheRead: cached, cacheWrite: 0,
+          output: Math.max(0, int(u.output_tokens)), recordedCache: 'cache_read_input_tokens' in u };
+        const slot = agg.startOfLocalDay(at), day = days.get(slot) || agg.emptyDay();
+        // No trustworthy model or billed cost is present in these events.
+        agg.addTally(day, 'CodeBuddy', tally, null);
+        days.set(slot, day);
+      }
+    } catch { /* A session may be moved or temporarily unreadable. */ }
+  }
+  return days;
+}
+
 // ------------------------------------------------------------------- cache
 
 // A log file only ever grows by appending; size + mtime say it is unchanged.
 // Parsed per-file results are kept so a refresh rereads only what moved.
 function cacheFile(dataDir, source) {
   return path.join(dataDir, `agent-ledger-${source}.json`);
+}
+
+// Cached buckets depend on local calendar rules as well as file contents.
+// Sample winter and summer so a change to Windows' DST setting is detected.
+function dayContext() {
+  const year = new Date().getFullYear();
+  return JSON.stringify([Intl.DateTimeFormat().resolvedOptions().timeZone,
+    new Date(year, 0, 15).getTimezoneOffset(), new Date(year, 6, 15).getTimezoneOffset()]);
 }
 
 function loadCache(dataDir, source) {
@@ -467,7 +553,7 @@ function saveCache(dataDir, source, files) {
 // entries on disk serialize Maps as plain objects.
 function serialize(entry) {
   return {
-    stamp: entry.stamp, firstMs: entry.firstMs, forked: entry.forked,
+    stamp: entry.stamp, dayContext: entry.dayContext, firstMs: entry.firstMs, forked: entry.forked,
     days: Object.fromEntries([...entry.days].map(([k, v]) => [k, v])),
     replies: Object.fromEntries([...entry.replies].map(([k, v]) => [k, v])),
     runningTotals: entry.runningTotals,
@@ -476,7 +562,7 @@ function serialize(entry) {
 
 function deserialize(o) {
   return {
-    stamp: o.stamp, firstMs: o.firstMs, forked: !!o.forked,
+    stamp: o.stamp, dayContext: o.dayContext, firstMs: o.firstMs, forked: !!o.forked,
     days: new Map(Object.entries(o.days || {}).map(([k, v]) => [Number(k), v])),
     replies: new Map(Object.entries(o.replies || {})),
     runningTotals: Array.isArray(o.runningTotals) ? o.runningTotals : [],
@@ -502,6 +588,9 @@ function merge(entries, table) {
 
   const add = (slot, model, tally) => {
     if (!Number.isFinite(slot)) return;
+    // A deleted transcript may survive only as an old cached daily bucket.
+    // Keep that work visible even when its old midnight no longer matches.
+    slot = agg.startOfLocalDay(slot);
     const day = days.get(slot) || agg.emptyDay();
     agg.addTally(day, model, tally, table);
     days.set(slot, day);
@@ -523,19 +612,13 @@ function merge(entries, table) {
   return days;
 }
 
-async function readLedger(source, dataDir) {
-  // ZCode's store is one small SQLite query — straight to days, no cache.
-  if (source === 'zcode') {
-    const table = await prices.table(dataDir);
-    const days = zcodeDays(table);
-    return days ? agg.build(days, Date.now(), table) : null;
-  }
-  // OpenCode's is the same shape: one table, every message row self-contained.
-  if (source === 'opencode') {
-    const table = await prices.table(dataDir);
-    const days = opencodeDays(table);
-    return days ? agg.build(days, Date.now(), table) : null;
-  }
+// The days Map before it is collapsed for a card — the total panel merges
+// these across every source.
+async function readLedgerDays(source, dataDir) {
+  const table = await prices.table(dataDir);
+  if (source === 'zcode') return zcodeDays(table);
+  if (source === 'opencode' || source === 'mimo') return opencodeDays(table, source);
+  if (source === 'codebuddy') return codebuddyDays();
 
   const cfg = SOURCES[source];
   if (!cfg) return null;
@@ -551,8 +634,8 @@ async function readLedger(source, dataDir) {
   }
   if (!files.length) return null;
 
-  const table = await prices.table(dataDir);
   const cached = loadCache(dataDir, source);
+  const context = dayContext();
   const entries = new Map();
   const fresh = {};
   const livePaths = new Set(files);
@@ -564,7 +647,7 @@ async function readLedger(source, dataDir) {
       stamp = { size: s.size, mtimeMs: Math.floor(s.mtimeMs) };
     } catch { continue; }
     const known = cached[file];
-    if (known && known.stamp && known.stamp.size === stamp.size && known.stamp.mtimeMs === stamp.mtimeMs) {
+    if (known && known.dayContext === context && known.stamp && known.stamp.size === stamp.size && known.stamp.mtimeMs === stamp.mtimeMs) {
       const entry = deserialize(known);
       entry.path = file;
       entries.set(file, entry);
@@ -575,6 +658,7 @@ async function readLedger(source, dataDir) {
     try { entry = await cfg.parse(file); } catch { continue; }
     entry.path = file;
     entry.stamp = stamp;
+    entry.dayContext = context;
     entries.set(file, entry);
     fresh[file] = serialize(entry);
   }
@@ -594,8 +678,14 @@ async function readLedger(source, dataDir) {
   }
 
   saveCache(dataDir, source, fresh);
-  const days = merge(entries, table);
+  return merge(entries, table);
+}
+
+async function readLedger(source, dataDir) {
+  const days = await readLedgerDays(source, dataDir);
+  if (!days) return null;
+  const table = await prices.table(dataDir);
   return agg.build(days, Date.now(), table);
 }
 
-module.exports = { readLedger };
+module.exports = { readLedger, readLedgerDays };

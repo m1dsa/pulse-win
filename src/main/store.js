@@ -11,6 +11,10 @@ const { PROVIDERS, byId } = require('./providers/index.js');
 
 const FLOOR_S = 120;    // 2 min
 const CEILING_S = 1800; // 30 min
+// A 429 means "same answer, ask later" — keep serving the last reading and
+// hit nothing until the cooldown ends. Anthropic's oauth usage endpoint is
+// especially quick to refuse.
+const COOLDOWN_MS = 3 * 60 * 1000;
 
 class UsageStore extends EventEmitter {
   constructor(settings, dataDir) {
@@ -19,6 +23,7 @@ class UsageStore extends EventEmitter {
     this.dataDir = dataDir;
     this.readings = new Map();   // accountId -> ProviderUsage
     this.busy = new Set();
+    this.cooldownUntil = new Map(); // accountId -> ms; no fetch while cooling
     this.timer = null;
     this.cacheFile = path.join(dataDir, 'usage-cache.json');
     this.loadCache();
@@ -83,13 +88,23 @@ class UsageStore extends EventEmitter {
     const provider = byId.get(accountId);
     if (!provider) return;
     if (this.busy.has(accountId)) return;
+    const cool = this.cooldownUntil.get(accountId);
+    if (cool && Date.now() < cool) return; // rate-limited earlier — hold the last reading
 
     this.busy.add(accountId);
     this.emit('changed', this.state());
     try {
       const usage = await provider.fetch(this.ctx(accountId));
       usage.observedAt = usage.observedAt || Date.now();
-      this.readings.set(accountId, usage);
+      if (usage.state === 'unavailable' && usage.reason === 'rateLimited') {
+        this.cooldownUntil.set(accountId, Date.now() + COOLDOWN_MS);
+        // Keep the last reading: a 429 means "same answer, ask later", so the
+        // card keeps its numbers (aged by observedAt) instead of a red error.
+        if (!this.readings.get(accountId)) this.readings.set(accountId, usage);
+      } else {
+        this.cooldownUntil.delete(accountId);
+        this.readings.set(accountId, usage);
+      }
     } catch {
       this.readings.set(accountId, {
         account: accountId, windows: [], observedAt: Date.now(),
@@ -111,7 +126,11 @@ class UsageStore extends EventEmitter {
       dataDir: this.dataDir,
       account: accountId,
       key: s.key(accountId, this.safeStorage),
-      site: s.get('minimaxSite'),
+      saveKey: (key) => {
+        if (this.safeStorage && this.safeStorage.isEncryptionAvailable()) s.setKey(accountId, key, this.safeStorage);
+      },
+      // A provider with two sites keeps its own setting named {id}Site.
+      site: s.get(accountId + 'Site'),
       basis: s.get('deepseekBasis'),
       budget: s.get('deepseekBudget'),
       currency: s.get('deepseekCurrency'),

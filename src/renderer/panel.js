@@ -59,7 +59,12 @@ function render() {
     const usage = readings[id];
     const meta = (snapshot.providers || []).find((p) => p.id === id);
     const head = usage ? UM.headline(usage) : null;
-    const isUnavail = !usage || usage.state === 'unavailable' || (!head && !(usage && usage.creditBalance));
+    // MiMo with only a wallet balance has no quota window to derive a ratio
+    // from, so its ring would otherwise be an empty grey track. A full green
+    // arc says "signed in / has balance" without inventing a usage figure.
+    const balanceRing = id === 'mimo' && !head && usage && usage.creditBalance != null;
+    const isUnavail = !usage || (usage.state === 'unavailable' && !balanceRing)
+      || (!head && !(usage && usage.creditBalance));
     const isStale = usage && usage.state === 'stale';
     const isBusy = busy.has(id);
 
@@ -67,8 +72,9 @@ function render() {
     slot.className = 'slot' + (isUnavail ? ' unavailable' : '') + (isStale ? ' stale' : '');
     slot.dataset.account = id;
 
-    const tintName = head ? UM.tint(head, warn) : 'none';
-    const { track, prog, sweep } = ringSVG(head, tintName, isBusy);
+    const tintName = head ? UM.tint(head, warn) : balanceRing ? 'green' : 'none';
+    const ringWindow = balanceRing ? { usedFraction: 1, isExhausted: false } : head;
+    const { track, prog, sweep } = ringSVG(ringWindow, tintName, isBusy);
     const icon = (snapshot.icons || {})[id] || '';
     const pct = head ? Math.round(head.usedFraction * 100) : null;
     const balanceOnly = !head && usage && usage.creditBalance;
@@ -113,7 +119,7 @@ function shortMoney(text) {
   if (!m) return String(text).slice(0, 5);
   const n = parseFloat(m[2].replace(/,/g, ''));
   if (!Number.isFinite(n)) return m[1] || '—';
-  const short = n >= 1000 ? Math.round(n / 100) / 10 + 'k' : (n % 1 ? n.toFixed(0) : String(n));
+  const short = n >= 1000 ? Math.round(n / 100) / 10 + 'k' : (n < 10 && n % 1 ? n.toFixed(1) : (n % 1 ? n.toFixed(0) : String(n)));
   return (m[1] || '') + short;
 }
 

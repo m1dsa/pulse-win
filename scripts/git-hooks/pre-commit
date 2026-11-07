@@ -1,0 +1,18 @@
+#!/bin/sh
+# Keep the Claude once-a-day quota policy off GitHub.
+if git diff --cached --name-only | grep -qx 'src/main/providers/claudeQuota.local.js'; then
+  git reset -q HEAD -- src/main/providers/claudeQuota.local.js
+  echo "pulse-win: left claudeQuota.local.js unstaged (this machine only)"
+fi
+
+staged=$(git diff --cached --name-only | grep -v '^scripts/git-hooks/' || true)
+if [ -n "$staged" ]; then
+  hit=$(printf '%s\n' "$staged" | while read -r f; do
+    git diff --cached -U0 -- "$f"
+  done | grep -E 'QUOTA_INTERVAL_MS|claude-quota\.json' || true)
+  if [ -n "$hit" ]; then
+    echo "pulse-win: blocked. Claude once-a-day quota stays on this machine only."
+    exit 1
+  fi
+fi
+exit 0

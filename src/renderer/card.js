@@ -85,13 +85,25 @@ function render() {
     hupdated.textContent = '';
     const div = document.createElement('div');
     div.className = 'reason';
-    div.textContent = T('r_' + (usage && usage.reason) || '') || T('r_unreachable');
+    const reason = usage && usage.reason;
+    const qoderLogin = accountId === 'qoder'
+      && ['sessionExpired', 'sessionMissing'].includes(reason);
+    const host = snapshot.settings && snapshot.settings.qoderSite === 'china' ? 'qoder.com.cn' : 'qoder.com';
+    div.textContent = accountId === 'qoder' && reason === 'sessionExpired'
+      ? T('qoderCookieExpired').replace('{url}', 'https://' + host + '/account/usage')
+      : qoderLogin ? T('r_qoderSignIn')
+      : T('r_' + (reason || 'unreachable'));
     rows.appendChild(div);
-    const cta = document.createElement('div');
-    cta.className = 'cta';
-    cta.textContent = T('openSettings');
-    cta.onclick = () => window.pulse.send('settings:open');
-    rows.appendChild(cta);
+    if (!(accountId === 'mimo' && reason === 'mimoNoPlan')) {
+      const cta = document.createElement('div');
+      cta.className = 'cta';
+      const loginChannel = accountId === 'mimo' && reason === 'mimoSignIn' ? 'mimo:login'
+        : qoderLogin ? 'qoder:login' : null;
+      cta.textContent = loginChannel ? (accountId === 'qoder' ? T('qoderLogin') : T('mimoLogin'))
+        : T('openSettings');
+      cta.onclick = () => window.pulse.send(loginChannel || 'settings:open');
+      rows.appendChild(cta);
+    }
   } else {
     hupdated.textContent = `${T('updated')} ${ago(usage.observedAt)}${usage.state === 'stale' ? ' · ' + T('r_statuslineCaptured') : ''}`;
 
@@ -106,8 +118,8 @@ function render() {
         <div class="name"><span>${windowName(w)}</span>${w.scope ? `<span class="scope">${escapeHtml(w.scope)}</span>` : ''}</div>
         <div class="bar"><div class="fill" style="width:${w.isExhausted ? 100 : pct}%;background:${color}"></div></div>
         <div class="row">
-          <span class="used" style="color:${w.isExhausted ? UM.TINT_COLOR.spent : '#fff'}">${pct}% ${T('used')}${w.isExhausted ? ' · ' + T('win_spend') : ''}${w.amount ? ' · ' + escapeHtml(w.amount) : ''}</span>
-          <span class="reset">${w.resetsAt ? T('resets') + ' ' + fmtReset(w.resetsAt) : ''}</span>
+          <span class="used" style="color:${w.isExhausted ? UM.TINT_COLOR.spent : '#fff'}">${pct}% ${T('used')}${w.isExhausted ? ' · ' + T('win_spend') : ''}${w.amount ? ' · ' + escapeHtml(w.amount) : ''}${w.remaining != null ? ' · ' + T('remaining') + ' ' + escapeHtml(String(w.remaining)) : ''}</span>
+          <span class="reset">${w.resetsAt ? (w.kind === 'balance' ? T('expires') : T('resets')) + ' ' + fmtReset(w.resetsAt) : ''}</span>
         </div>`;
       if (w.estimate) {
         const est = document.createElement('div');
@@ -118,14 +130,49 @@ function render() {
       rows.appendChild(div);
     }
 
-    if (usage.creditBalance) {
-      const br = document.createElement('div');
-      br.className = 'balance-row';
-      br.innerHTML = `<span class="k">${T('balance')}</span><span class="v">${escapeHtml(String(usage.creditBalance))}</span>`;
-      rows.appendChild(br);
-    }
   }
 
+  if (usage && usage.creditBalance != null) {
+    const br = document.createElement('div');
+    br.className = 'balance-row';
+    br.innerHTML = `<span class="k">${T('balance')}</span><span class="v">${escapeHtml(String(usage.creditBalance))}</span>`;
+    rows.appendChild(br);
+  }
+  if (accountId === 'mimo' && usage && usage.ledger && usage.ledger.week) {
+    const summary = document.createElement('div');
+    summary.className = 'lnote';
+    summary.textContent = T('mimoTokenSummary').replace('{count}', shortTokens(usage.ledger.week.tokens));
+    rows.appendChild(summary);
+  }
+
+  if (['codebuddy', 'qoder', 'trae'].includes(accountId) && usage && usage.state !== 'unavailable') {
+    const section = document.createElement('div');
+    section.className = 'ledger';
+    const title = document.createElement('div');
+    title.className = 'ltitle';
+    title.textContent = '积分到期';
+    section.appendChild(title);
+    const entries = usage.expirations;
+    if (!Array.isArray(entries) || !entries.length) {
+      const note = document.createElement('div');
+      note.className = 'lnote';
+      note.textContent = Array.isArray(entries) ? '没有可显示的待到期积分' : '到期时间暂时无法读取';
+      section.appendChild(note);
+    } else {
+      for (const entry of entries) {
+        const row = document.createElement('div');
+        row.className = 'lrow';
+        const date = document.createElement('span');
+        date.textContent = entry.date + ' 到期';
+        const credits = document.createElement('span');
+        credits.className = 'rv';
+        credits.textContent = new Intl.NumberFormat('zh-CN', { maximumFractionDigits: 6 }).format(entry.credits) + ' 积分';
+        row.append(date, credits);
+        section.appendChild(row);
+      }
+    }
+    rows.appendChild(section);
+  }
   if (usage && usage.ledger) renderLedger(usage.ledger);
 
   // Size goes up first, the frame follows. offsetHeight forces a synchronous
@@ -141,10 +188,11 @@ function renderLedger(ledger) {
   sec.className = 'ledger';
 
   const sym = { CNY: '¥', USD: '$', HKD: 'HK$', TWD: 'NT$', JPY: '¥' }[ledger.currency] || '$';
+  const credits = ledger.note === 'credits';
   const fig = (label, f) => {
     const priced = f.tokens > 0 && f.unpriced < f.tokens;
     const money = f.cost > 0 && priced ? `<div class="lc">${sym}${f.cost.toFixed(2)}</div>` : '';
-    return `<div class="lfig"><div class="lk">${label}</div><div class="lv">${shortTokens(f.tokens)}</div>${money}</div>`;
+    return `<div class="lfig"><div class="lk">${label}</div><div class="lv">${credits ? shortCredits(f.tokens) : shortTokens(f.tokens)}</div>${money}</div>`;
   };
 
   const peak = Math.max(1, ...(ledger.bars || []));
@@ -168,8 +216,17 @@ function renderLedger(ledger) {
     <div class="lfigs">${fig(T('today'), ledger.today)}${fig(T('days7'), ledger.week)}${fig(T('days31'), ledger.month)}</div>
     <div class="lbars">${bars}</div>
     ${extra}
-    <div class="lnote">${T(ledger.note === 'server' ? 'costNoteServer' : 'costNote')}</div>`;
+    <div class="lnote">${T(ledger.note === 'server' ? 'costNoteServer' : credits ? 'costNoteCredits' : 'costNote')}</div>`;
   rows.appendChild(sec);
+}
+
+// Credits are small fractional counts — keep the decimal ("19.6") until the
+// figure is big enough that the compact token spelling takes over.
+function shortCredits(n) {
+  if (!n || n <= 0) return '0';
+  if (n >= 1e4) return shortTokens(n);
+  const s = n >= 1e3 ? n.toFixed(0) : n.toFixed(1);
+  return s.endsWith('.0') ? s.slice(0, -2) : s;
 }
 
 // 3.19亿 / 14.8亿 — zh-style compact counts the way the card spells them.

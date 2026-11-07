@@ -17,12 +17,27 @@ const minimax = require('./minimax.js');
 const v2ex = require('./v2ex.js');
 const devin = require('./devin.js');
 const qwenCloud = require('./qwenCloud.js');
+const qoder = require('./qoder.js');
+const trae = require('./trae.js');
 const openCodeGo = require('./openCodeGo.js');
 
 const HOME = os.homedir();
 function exists(p) { try { fs.accessSync(p); return true; } catch { return false; } }
 
+const mimo = require('./mimo.js');
+const codebuddy = require('./codebuddy.js');
+
 const PROVIDERS = [
+  {
+    id: 'mimo', name: '小米 MiMo Code', icon: 'xiaomimimo.svg', usesAPIKey: false,
+    discovered: () => exists(path.join(HOME, '.local', 'share', 'mimocode', 'mimocode.db')),
+    fetch: (ctx) => mimo.fetchUsage(ctx),
+  },
+  {
+    id: 'codebuddy', name: 'CodeBuddy', icon: 'tencent.svg', usesAPIKey: false,
+    discovered: () => exists(path.join(HOME, '.codebuddy', 'projects')),
+    fetch: (ctx) => codebuddy.fetchUsage(ctx),
+  },
   {
     id: 'claudeCode',
     name: 'Claude Code',
@@ -69,11 +84,16 @@ const PROVIDERS = [
     id: 'glmCoding',
     name: 'Zhipu GLM Coding',
     icon: 'zai.svg',
+    // The API key still feeds paid-plan rate limits, but a Z Code install on
+    // this machine already makes the Start Plan balance readable on its own.
     usesAPIKey: true,
+    apiKeyOptional: true,
+    keyHint: 'apiKeyGlmCodingPlaceholder',
     discovered: () => [
       path.join(HOME, '.coding-relay', 'glm-api-key'),
       path.join(HOME, '.config', 'bigmodel', 'api_key'),
       path.join(HOME, '.config', 'zhipu', 'api_key'),
+      path.join(HOME, '.zcode', 'v2', 'logs'),
     ].some(exists),
     fetch: (ctx) => zai.fetchUsage({ ...ctx, providerId: 'glmCoding' }),
   },
@@ -125,6 +145,37 @@ const PROVIDERS = [
     keyHint: 'apiKeyCookiePlaceholder',
     discovered: () => false,
     fetch: (ctx) => qwenCloud.fetchUsage(ctx),
+  },
+  {
+    id: 'qoder',
+    name: 'Qoder',
+    icon: 'qoder.svg',
+    // No key of its own: the account page reads credits off a web session, so
+    // the pasted "key" is the Cookie header. qoder.com and qoder.com.cn are
+    // separate sign-ins, hence the site picker.
+    // Sign-in is a button (a MiMo-style window), not a pasted Cookie header.
+    usesAPIKey: false,
+    sites: [{ id: 'international', label: 'qoder.com' }, { id: 'china', label: 'qoder.com.cn' }],
+    discovered: () => [
+      path.join(process.env.LOCALAPPDATA || path.join(HOME, 'AppData', 'Local'), 'Qoder'),
+      path.join(process.env.APPDATA || path.join(HOME, 'AppData', 'Roaming'), 'Qoder CN'),
+      path.join(HOME, '.qoder-cn'),
+      path.join(HOME, '.qoder'),
+    ].some(exists),
+    fetch: (ctx) => qoder.fetchUsage(ctx),
+  },
+  {
+    id: 'trae',
+    name: 'Trae CN',
+    icon: 'trae.svg',
+    // The account token is read from Trae's own encrypted local storage;
+    // Settings still accepts a manually pasted one as a fallback.
+    usesAPIKey: true,
+    apiKeyOptional: true,
+    keyHint: 'apiKeyTraePlaceholder',
+    discovered: () => exists(path.join(HOME, '.trae-cn'))
+      || exists(path.join(process.env.APPDATA || path.join(HOME, 'AppData', 'Roaming'), 'Trae CN')),
+    fetch: (ctx) => trae.fetchUsage(ctx),
   },
   {
     id: 'openCodeGo',

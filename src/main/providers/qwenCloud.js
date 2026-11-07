@@ -336,4 +336,4 @@ async function fetchUsage(ctx) {
   return U.live(ACCOUNT, windows, { plan });
 }
 
-module.exports = { fetchUsage };
+module.exports = { fetchUsage, request };

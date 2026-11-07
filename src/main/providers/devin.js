@@ -1,19 +1,26 @@
 // Devin — port of DevinUsageService.swift.
 //
-// Two routes, same as the Mac version:
-//   1. App cache (no credential): Devin's desktop app is the renamed Windsurf
-//      editor, so it keeps its plan row in a VS Code state database —
-//      %APPDATA%\Devin\User\globalStorage\state.vscdb, key
-//      `windsurf.reactSettings.cachedPlanInfoData:<userId>`. The row reports
-//      daily/weekly REMAINING percents plus reset times, written once per app
-//      launch, so freshness comes from the newest directory under logs/.
+// Three routes:
+//   1. App session (no credential): the desktop app signs its Codeium
+//      session into server.codeium.com and stores the token
+//      (`devin-session-token$<jwt>`) in the same state database as the plan
+//      row. Calling GetPlanStatus with it is what the app itself does on
+//      launch — live daily/weekly REMAINING percents, reset times, overage
+//      balance, plan name. No window opened, no key pasted.
 //   2. Endpoint (optional pasted "token org"): GET
 //      app.devin.ai/api/<org>/billing/quota/usage, live figures reported as
 //      USED percents — the opposite sign of the cached row.
+//   3. App cache (fallback): Devin's desktop app is the renamed Windsurf
+//      editor, so it keeps its plan row in a VS Code state database —
+//      %APPDATA%\Devin\User\globalStorage\state.vscdb, key
+//      `windsurf.reactSettings.cachedPlanInfoData:<userId>`. The row is
+//      written once per app launch, so freshness comes from the newest
+//      directory under logs/ — and it answers when the session is gone or
+//      the call is refused.
 //
 // The browser-localStorage credential route from the Mac version is not
-// ported: Chromium's leveldb store is a different parser again, and a pasted
-// token covers the live route.
+// ported: Chromium's leveldb store is a different parser again, and the
+// app's own session token covers the live route.
 'use strict';
 
 const fs = require('fs');
@@ -23,6 +30,9 @@ const U = require('../../shared/usage.js');
 const { request, bearer } = require('../http.js');
 
 const HOST = 'https://app.devin.ai';
+const CODEIUM_HOST = 'https://server.codeium.com';
+const PLAN_STATUS = '/exa.seat_management_pb.SeatManagementService/GetPlanStatus';
+const SESSION_TOKEN = /devin-session-token\$[A-Za-z0-9_.-]+/g;
 const SUPPORT_NAMES = ['Devin', 'Windsurf'];
 const PLAN_KEYS = ['windsurf.reactSettings.cachedPlanInfoData', 'windsurf.settings.cachedPlanInfo'];
 const FRESH_MS = 10 * 60 * 1000;        // past this the card says "as of …"
@@ -175,6 +185,52 @@ function windowsFromPlan(plan) {
   return w;
 }
 
+// ------------------------------------------------- session (the app's own)
+
+// The token sits in the same database as the plan row, inside the
+// `windsurfAuthStatus` blob. A copy can wait in a -wal frame for a
+// checkpoint, and a torn tail can truncate it — scan both files and let the
+// longest match win.
+function sessionToken(support) {
+  const found = new Set();
+  const dbFile = path.join(support, 'User', 'globalStorage', 'state.vscdb');
+  for (const file of [dbFile, dbFile + '-wal']) {
+    let buf;
+    try { buf = fs.readFileSync(file); } catch { continue; }
+    for (const m of buf.toString('latin1').matchAll(SESSION_TOKEN)) found.add(m[0]);
+  }
+  return [...found].sort((a, b) => b.length - a.length)[0] || null;
+}
+
+// Live figures, same remaining-percent sign as the cached row. Any failure
+// returns null — the cache it stands in front of answers instead.
+async function sessionFetch(token) {
+  const res = await request(CODEIUM_HOST + PLAN_STATUS, {
+    method: 'POST', timeoutMs: 15000, retries: 1,
+    headers: { 'Content-Type': 'application/json', 'x-auth-token': token },
+    body: JSON.stringify({ metadata: {
+      api_key: token, ide_name: 'devin', ide_version: '1.0.0',
+      extension_name: 'windsurf', extension_version: '1.0.0', locale: 'en_US',
+    }}),
+  });
+  if (res.status !== 200 || !res.json || typeof res.json !== 'object') return null;
+  const ps = res.json.planStatus;
+  if (!ps || typeof ps !== 'object') return null;
+
+  const now = Date.now();
+  const windows = [
+    remainingWindow('devin-daily', 'daily', 86400,
+      ps.dailyQuotaRemainingPercent, ps.dailyQuotaResetAtUnix, ps.hideDailyQuota),
+    remainingWindow('devin-weekly', 'weekly', 604800,
+      ps.weeklyQuotaRemainingPercent, ps.weeklyQuotaResetAtUnix, ps.hideWeeklyQuota),
+  ].filter(Boolean).map((w) => rollForward(w, now));
+  const info = ps.planInfo && typeof ps.planInfo === 'object' ? ps.planInfo : {};
+  const plan = [info.planName, info.plan_name].find((x) => typeof x === 'string' && x) || null;
+  const bal = money(ps.overageBalanceMicros);
+  if (!windows.length && bal == null) return null;
+  return U.live(ACCOUNT, windows, { plan, creditBalance: bal });
+}
+
 // ------------------------------------------------------------- endpoint
 
 // "token [org]" — accepts an Authorization line, a Bearer prefix, a bare
@@ -280,6 +336,16 @@ async function endpointFetch(credential) {
 
 // ------------------------------------------------------------------ fetch
 
+// A daily row stamps the window's opening, not its closing edge, so by the
+// time it is read the reset has always "passed" and the bar used to vanish
+// for the rest of the day. Roll a past stamp forward by whole windows to keep
+// the countdown; a future one (weekly normally) is left exactly as reported.
+function rollForward(w, now) {
+  if (w.resetsAt == null || w.resetsAt > now || !w.windowSeconds) return w;
+  const step = w.windowSeconds * 1000;
+  return { ...w, resetsAt: w.resetsAt + Math.ceil((now - w.resetsAt) / step) * step };
+}
+
 function appCacheFetch() {
   const support = supportDir();
   if (!support) return U.unavailable(ACCOUNT, 'devinAppMissing');
@@ -292,8 +358,7 @@ function appCacheFetch() {
     return U.unavailable(ACCOUNT, 'devinPlanUnread');
   }
 
-  const windows = windowsFromPlan(entry.plan)
-    .filter((w) => w.resetsAt == null || w.resetsAt > now); // a passed reset's figure is gone
+  const windows = windowsFromPlan(entry.plan).map((w) => rollForward(w, now));
   const bal = money(entry.plan.overageBalanceMicros);
   if (!windows.length && bal == null) return U.unavailable(ACCOUNT, 'noLimitsReported');
 
@@ -308,7 +373,20 @@ function appCacheFetch() {
 
 async function fetchUsage(ctx) {
   const credential = parseCredential(ctx.key);
-  const usage = credential ? await endpointFetch(credential) : appCacheFetch();
+  let usage;
+  if (credential) {
+    usage = await endpointFetch(credential);
+  } else {
+    // The app's own session answers live; the plan row it writes on launch
+    // is the fallback it leaves behind.
+    usage = null;
+    const support = supportDir();
+    if (support) {
+      const token = sessionToken(support);
+      if (token) usage = await sessionFetch(token);
+    }
+    if (!usage) usage = appCacheFetch();
+  }
 
   // The CLI's own session database is the "on this Mac" history — tokens,
   // money at API prices, the busiest model, the cache's hit rate. It answers

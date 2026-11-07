@@ -1,0 +1,68 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<title>Pulse 总用量</title>
+<style>
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  body {
+    font: 12px/1.5 "Segoe UI", "Microsoft YaHei", sans-serif;
+    background: #161617; color: #e5e5ea;
+    padding: 18px 22px 16px; overflow: hidden;
+  }
+  .head { display: flex; align-items: baseline; gap: 14px; }
+  .head h1 { font-size: 15px; font-weight: 600; }
+  .head .updated { color: #8e8e93; font-size: 11px; margin-left: auto; }
+  .head button {
+    background: #2c2c2e; color: #e5e5ea; border: 1px solid #3a3a3c;
+    border-radius: 5px; padding: 3px 12px; font-size: 11px; cursor: pointer;
+  }
+  .head button:hover { background: #3a3a3c; }
+  .big { display: flex; gap: 28px; margin: 12px 0 4px; }
+  .big .num { font-size: 24px; font-weight: 700; }
+  .big .cap { color: #8e8e93; font-size: 11px; }
+  .row3 { display: flex; gap: 28px; margin: 8px 0 10px; }
+  .row3 .cell { color: #aeaeb2; }
+  .row3 .cell b { font-size: 14px; color: #e5e5ea; font-weight: 600; }
+  .row3 .cell i { font-style: normal; color: #8e8e93; font-size: 10px; margin-left: 5px; }
+  .sec { border-top: 1px solid #2c2c2e; padding-top: 9px; margin-top: 4px; }
+  .sec .cap { color: #8e8e93; font-size: 11px; margin-bottom: 6px; }
+  table { border-collapse: collapse; }
+  td { padding: 2px 26px 2px 0; font-size: 11.5px; white-space: nowrap; }
+  td.dim { color: #8e8e93; }
+  td.num { font-variant-numeric: tabular-nums; }
+  #heatmap { display: flex; gap: 3px; margin-top: 4px; }
+  #heatmap .col { display: flex; flex-direction: column; gap: 3px; }
+  #heatmap .d { width: 11px; height: 11px; border-radius: 2px; background: #2d2d30; }
+  #heatmap .d.l1 { background: #0e4429; }
+  #heatmap .d.l2 { background: #006d32; }
+  #heatmap .d.l3 { background: #26a641; }
+  #heatmap .d.l4 { background: #39d353; }
+  #heatmap .d.l5 { background: #7dffa0; }
+  .legend { display: flex; align-items: center; gap: 4px; margin-top: 7px; color: #8e8e93; font-size: 10px; }
+  .legend .d { width: 10px; height: 10px; border-radius: 2px; }
+  .legend .sep { margin: 0 4px; }
+  .foot { margin-top: 9px; color: #636366; font-size: 10px; }
+  .empty { color: #8e8e93; padding: 30px 0; text-align: center; }
+</style>
+</head>
+<body>
+  <div class="head">
+    <h1>总用量</h1>
+    <span class="updated" id="updated"></span>
+    <button id="refresh">立即刷新</button>
+  </div>
+  <div class="big">
+    <div><div class="num" id="allTokens">–</div><div class="cap">累计 token</div></div>
+    <div><div class="num" id="allCost">–</div><div class="cap">估算花费</div></div>
+  </div>
+  <div class="row3" id="row3"></div>
+  <div class="sec"><div class="cap">按服务商</div><table id="byProvider"></table></div>
+  <div class="sec"><div class="cap">每日合计（近 52 周）</div>
+    <div id="heatmap"></div>
+    <div class="legend" id="legend"></div>
+  </div>
+  <div class="foot">金额按 API 价格估算，未定价模型不计入。</div>
+  <script src="total.js"></script>
+</body>
+</html>

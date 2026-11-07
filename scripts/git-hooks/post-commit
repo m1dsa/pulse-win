@@ -1,0 +1,13 @@
+#!/bin/sh
+# After each commit on main, push it. Never force-push.
+branch=$(git rev-parse --abbrev-ref HEAD)
+if [ "$branch" != "main" ]; then
+  echo "pulse-win: branch is $branch, skip auto-push"
+  exit 0
+fi
+if git push origin HEAD:main; then
+  echo "pulse-win: pushed main"
+else
+  echo "pulse-win: auto-push failed; the commit is still local"
+fi
+exit 0

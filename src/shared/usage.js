@@ -20,6 +20,7 @@
       reportsLength: o.reportsLength !== false,
       estimate: o.estimate || null,           // 'sinceTopUp'|'yourBudget'|'planPrice'
       isExhausted: o.isExhausted === true,
+      remaining: o.remaining != null ? o.remaining : null,
       amount: o.amount || null,               // absolute figures the service reported, e.g. '1.2k / 5k'
     };
   }

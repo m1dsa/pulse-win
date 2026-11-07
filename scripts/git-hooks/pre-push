@@ -1,0 +1,11 @@
+#!/bin/sh
+# Last gate before a push leaves this machine.
+if git grep -n -E 'QUOTA_INTERVAL_MS|claude-quota\.json' HEAD -- src >/dev/null 2>&1; then
+  echo "pulse-win: push blocked. Claude once-a-day quota is in src and must stay local."
+  exit 1
+fi
+if git cat-file -e "HEAD:src/main/providers/claudeQuota.local.js" 2>/dev/null; then
+  echo "pulse-win: push blocked. claudeQuota.local.js must not be committed."
+  exit 1
+fi
+exit 0

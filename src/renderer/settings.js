@@ -87,15 +87,16 @@ function render() {
       hasExtras = true;
     }
 
-    if (p.id === 'minimax' && p.enabled) {
+    if (p.sites && p.sites.length && p.enabled) {
+      const settingKey = p.id + 'Site';
       const sel = document.createElement('select');
-      for (const s of p.sites || []) {
+      for (const s of p.sites) {
         const o = document.createElement('option');
         o.value = s.id; o.textContent = s.label;
-        if (snap.settings.minimaxSite === s.id) o.selected = true;
+        if (snap.settings[settingKey] === s.id) o.selected = true;
         sel.appendChild(o);
       }
-      sel.addEventListener('change', () => window.pulse.send('settings:set', 'minimaxSite', sel.value));
+      sel.addEventListener('change', () => window.pulse.send('settings:set', settingKey, sel.value));
       const lbl = document.createElement('span'); lbl.className = 'sub'; lbl.textContent = T('site');
       extras.prepend(sel); extras.prepend(lbl);
       hasExtras = true;
@@ -115,6 +116,27 @@ function render() {
       hasExtras = true;
     }
 
+    if (p.id === 'mimo' && p.enabled) {
+      const button = document.createElement('button');
+      button.textContent = '登录小米账号';
+      button.addEventListener('click', () => window.pulse.send('mimo:login'));
+      extras.appendChild(button);
+      hasExtras = true;
+    }
+    if (p.id === 'qoder' && p.enabled) {
+      const button = document.createElement('button');
+      button.textContent = '登录 Qoder 账号';
+      button.addEventListener('click', () => window.pulse.send('qoder:login'));
+      extras.appendChild(button);
+      hasExtras = true;
+    }
+    if (p.id === 'codebuddy' && p.enabled) {
+      const button = document.createElement('button');
+      button.textContent = '连接 CodeBuddy 账号';
+      button.addEventListener('click', () => window.pulse.send('codebuddy:login'));
+      extras.appendChild(button);
+      hasExtras = true;
+    }
     if (hasExtras) row.appendChild(extras);
     list.appendChild(row);
   }

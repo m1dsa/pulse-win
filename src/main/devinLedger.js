@@ -72,15 +72,20 @@ function scan(file, table) {
   return days;
 }
 
-async function readLedger(dataDir) {
+async function readDays(dataDir) {
   if (!DatabaseSync) return null;
   const file = databases()[0];
   if (!file) return null;
 
   const table = await prices.table(dataDir);
-  let days;
-  try { days = scan(file, table); } catch { return null; }
+  try { return scan(file, table); } catch { return null; }
+}
+
+async function readLedger(dataDir) {
+  const days = await readDays(dataDir);
+  if (!days) return null;
+  const table = await prices.table(dataDir);
   return agg.build(days, Date.now(), table);
 }
 
-module.exports = { readLedger };
+module.exports = { readLedger, readDays };

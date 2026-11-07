@@ -19,6 +19,7 @@ const DEFAULTS = {
   hidesFromScreenCapture: false,
   language: 'zh-CN',
   minimaxSite: 'international',
+  qoderSite: 'international',
   deepseekBasis: 'sinceTopUp',    // 'sinceTopUp' | 'yourBudget' | 'balanceOnly'
   deepseekBudget: null,
   deepseekCurrency: null,

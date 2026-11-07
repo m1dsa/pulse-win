@@ -16,6 +16,13 @@ const ENDPOINT = 'https://api.anthropic.com/api/oauth/usage';
 const PROFILE = 'https://api.anthropic.com/api/oauth/profile';
 const FRESH_FOR = 10 * 60 * 1000;
 
+// Optional policy that lives only on this machine (claudeQuota.local.js).
+// The public repo has no quota schedule of its own.
+function localQuotaGate() {
+  try { return require('./claudeQuota.local.js'); }
+  catch { return null; }
+}
+
 // The plan cache survives between refreshes: one profile call per 6h at most.
 const planCache = new Map(); // accountId -> {name, at}
 
@@ -214,14 +221,22 @@ async function fetchQuota(ctx) {
   const credentials = storedCredentials(home);
   const hadCredentials = credentials != null;
   const token = credentials && unexpiredAccessToken(credentials);
+  const gate = localQuotaGate();
+
+  if (gate && token) {
+    const held = gate.hold(ctx, { home, account, readCapturedUsage });
+    if (held) return held;
+  }
 
   if (token) {
     const out = await fetchOverHTTP(account, token);
     if (out.ok) {
+      if (gate) gate.note(ctx, { ok: true, usage: out.usage });
       // The file also states the plan on Windows — prefer it over a slow call.
       if (!out.usage.plan) out.usage.plan = planFromCredentials(credentials);
       return out.usage;
     }
+    if (gate) gate.note(ctx, { ok: false });
     if (!out.needsFresh) {
       const capture = readCapturedUsage(home, account);
       if (capture) return capture;

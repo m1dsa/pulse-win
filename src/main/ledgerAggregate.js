@@ -44,12 +44,15 @@ function addTally(day, model, tally, table) {
 // first record are left off, days after the last are quiet bars.
 function recent(days, count, now) {
   const today = startOfLocalDay(now);
-  const start = today - (count - 1) * 86400000;
+  const startDate = new Date(today);
+  startDate.setDate(startDate.getDate() - (count - 1));
+  const start = startDate.getTime();
   const first = Math.min(...days.keys());
   const from = Math.max(start, first);
   const out = [];
-  for (let d = from; d <= today; d += 86400000) {
-    out.push(days.get(d) || emptyDay());
+  const cursor = new Date(from);
+  for (; cursor.getTime() <= today; cursor.setDate(cursor.getDate() + 1)) {
+    out.push(days.get(cursor.getTime()) || emptyDay());
   }
   return out;
 }
